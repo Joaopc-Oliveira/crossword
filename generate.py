@@ -108,14 +108,32 @@ class CrosswordCreator():
 
     def revise(self, x, y):
         """
-        Make variable `x` arc consistent with variable `y`.
-        To do so, remove values from `self.domains[x]` for which there is no
-        possible corresponding value for `y` in `self.domains[y]`.
-
-        Return True if a revision was made to the domain of `x`; return
-        False if no revision was made.
+        Make variable x arc consistent with variable y.
+        Returns True if a revision was made to the domain of x; False otherwise.
         """
-        raise NotImplementedError
+        revised = False
+        overlap = self.crossword.overlaps.get((x, y))
+        if overlap is None:
+            return False  # No overlap, no revision needed
+
+        xi, yi = overlap
+        words_to_remove = set()
+
+        for word_x in self.domains[x]:
+            # Check if there exists at least one word in y's domain that matches at the overlap
+            match_found = False
+            for word_y in self.domains[y]:
+                if word_x[xi] == word_y[yi]:
+                    match_found = True
+                    break
+            if not match_found:
+                words_to_remove.add(word_x)
+                revised = True
+
+        if revised:
+            self.domains[x] -= words_to_remove
+
+        return revised
 
     def ac3(self, arcs=None):
         """
