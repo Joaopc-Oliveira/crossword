@@ -137,14 +137,82 @@ class CrosswordCreator():
 
     def ac3(self, arcs=None):
         """
-        Update `self.domains` such that each variable is arc consistent.
-        If `arcs` is None, begin with initial list of all arcs in the problem.
-        Otherwise, use `arcs` as the initial list of arcs to make consistent.
-
-        Return True if arc consistency is enforced and no domains are empty;
-        return False if one or more domains end up empty.
+        Enforce arc consistency using the AC3 algorithm.
+        Returns True if arc consistency is enforced without empty domains; False otherwise.
         """
-        raise NotImplementedError
+        queue = deque()
+        if arcs is None:
+            # Initialize queue with all arcs
+            for var in self.crossword.variables:
+                for neighbor in self.crossword.neighbors(var):
+                    queue.append((var, neighbor))
+        else:
+            for arc in arcs:
+                queue.append(arc)
+
+        while queue:
+            (x, y) = queue.popleft()
+            if self.revise(x, y):
+                if not self.domains[x]:
+                    return False  # Domain wiped out
+                for neighbor in self.crossword.neighbors(x):
+                    if neighbor != y:
+                        queue.append((neighbor, x))
+        return True
+
+    def assignment_complete(self, assignment):
+        """
+        Check if the assignment is complete.
+        """
+        return len(assignment) == len(self.crossword.variables)
+
+    def consistent(self, assignment):
+        """
+        Check if the assignment is consistent.
+        """
+        assigned_words = set()
+        for var, word in assignment.items():
+            # Check word uniqueness
+            if word in assigned_words:
+                return False
+            assigned_words.add(word)
+            # Check length consistency
+            if len(word) != var.length:
+                return False
+            # Check overlaps
+            for neighbor in self.crossword.neighbors(var):
+                if neighbor in assignment:
+                    overlap = self.crossword.overlaps.get((var, neighbor))
+                    if overlap:
+                        xi, yi = overlap
+                        if word[xi] != assignment[neighbor][yi]:
+                            return False
+        return True
+
+    def order_domain_values(self, var, assignment):
+        """
+        Return a list of values in the domain of var, ordered by the least-constraining value heuristic.
+        """
+
+        def count_conflicts(value):
+            count = 0
+            for neighbor in self.crossword.neighbors(var):
+                if neighbor in assignment:
+                    continue
+                overlap = self.crossword.overlaps.get((var, neighbor))
+                if overlap:
+                    xi, yi = overlap
+                    for neighbor_word in self.domains[neighbor]:
+                        if value[xi] != neighbor_word[yi]:
+                            count += 1
+            return count
+
+        # Sort the domain values by the number of conflicts they impose on neighbors (ascending)
+        return sorted(self.domains[var], key=count_conflicts)
+
+
+
+
 
     def assignment_complete(self, assignment):
         """
@@ -153,21 +221,9 @@ class CrosswordCreator():
         """
         raise NotImplementedError
 
-    def consistent(self, assignment):
-        """
-        Return True if `assignment` is consistent (i.e., words fit in crossword
-        puzzle without conflicting characters); return False otherwise.
-        """
-        raise NotImplementedError
 
-    def order_domain_values(self, var, assignment):
-        """
-        Return a list of values in the domain of `var`, in order by
-        the number of values they rule out for neighboring variables.
-        The first value in the list, for example, should be the one
-        that rules out the fewest values among the neighbors of `var`.
-        """
-        raise NotImplementedError
+
+
 
     def select_unassigned_variable(self, assignment):
         """
