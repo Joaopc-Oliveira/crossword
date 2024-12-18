@@ -1,60 +1,133 @@
 import sys
-from crossword import Crossword, Variable
 import copy
 from collections import deque
-from PIL import Image, ImageDraw, ImageFont
+from crossword import *
+
 
 class CrosswordCreator():
 
     def __init__(self, crossword):
         """
-        Create new CSP crossword generator.
+        Cria um novo gerador de CSP para crosswords.
         """
         self.crossword = crossword
-        # Domains is a dictionary mapping each variable to a set of possible words
         self.domains = {
-            var: copy.deepcopy(crossword.words)
-            for var in crossword.variables
+            var: self.crossword.words.copy()
+            for var in self.crossword.variables
         }
+
+    def letter_grid(self, assignment):
+        """
+        Retorna uma matriz 2D representando uma determinada atribuição.
+        """
+        letters = [
+            [None for _ in range(self.crossword.width)]
+            for _ in range(self.crossword.height)
+        ]
+        for variable, word in assignment.items():
+            direction = variable.direction
+            for k in range(len(word)):
+                i = variable.i + (k if direction == Variable.DOWN else 0)
+                j = variable.j + (k if direction == Variable.ACROSS else 0)
+                letters[i][j] = word[k]
+        return letters
+
+    def print(self, assignment):
+        """
+        Imprime a atribuição do crossword no terminal.
+        """
+        letters = self.letter_grid(assignment)
+        for i in range(self.crossword.height):
+            for j in range(self.crossword.width):
+                if self.crossword.structure[i][j]:
+                    print(letters[i][j] or " ", end="")
+                else:
+                    print("█", end="")
+            print()
+
+    def save(self, assignment, filename):
+        """
+        Salva a atribuição do crossword em um arquivo de imagem.
+        """
+        from PIL import Image, ImageDraw, ImageFont
+
+        cell_size = 100
+        cell_border = 2
+        interior_size = cell_size - 2 * cell_border
+        letters = self.letter_grid(assignment)
+
+        # Cria uma tela em branco
+        img = Image.new(
+            "RGBA",
+            (self.crossword.width * cell_size,
+             self.crossword.height * cell_size),
+            "black"
+        )
+        try:
+            font = ImageFont.truetype("assets/fonts/OpenSans-Regular.ttf", 80)
+        except IOError:
+            font = ImageFont.load_default()
+        draw = ImageDraw.Draw(img)
+
+        for i in range(self.crossword.height):
+            for j in range(self.crossword.width):
+
+                rect = [
+                    (j * cell_size + cell_border,
+                     i * cell_size + cell_border),
+                    ((j + 1) * cell_size - cell_border,
+                     (i + 1) * cell_size - cell_border)
+                ]
+                if self.crossword.structure[i][j]:
+                    draw.rectangle(rect, fill="white")
+                    if letters[i][j]:
+                        # Centraliza o texto na célula
+                        w, h = draw.textsize(letters[i][j], font=font)
+                        draw.text(
+                            (rect[0][0] + ((interior_size - w) / 2),
+                             rect[0][1] + ((interior_size - h) / 2) - 10),
+                            letters[i][j], fill="black", font=font
+                        )
+
+        img.save(filename)
 
     def solve(self):
         """
-        Enforce node and arc consistency, and then solve the CSP using backtracking.
-        Returns a complete assignment if possible, else None.
+        Aplica consistência de nó e arco, e então resolve o CSP.
         """
         self.enforce_node_consistency()
-        if not self.ac3():
-            return None
+        self.ac3()
         return self.backtrack(dict())
 
     def enforce_node_consistency(self):
         """
-        Update `self.domains` such that each variable is node-consistent.
-        Remove any words that don't match the variable's length.
+        Atualiza `self.domains` de forma que cada variável seja consistente com o nó.
+        Remove quaisquer palavras que não correspondam ao comprimento da variável.
         """
         for var in self.crossword.variables:
-            # Create a copy to avoid modifying the set during iteration
             words_to_remove = set()
             for word in self.domains[var]:
                 if len(word) != var.length:
                     words_to_remove.add(word)
-            self.domains[var] -= words_to_remove
+            if words_to_remove:
+                self.domains[var] -= words_to_remove
 
     def revise(self, x, y):
         """
-        Make variable x arc consistent with variable y.
-        Returns True if a revision was made to the domain of x; False otherwise.
+        Torna a variável x consistente com a variável y.
+        Retorna True se alguma revisão foi feita na domínio de x; False caso contrário.
         """
         revised = False
         overlap = self.crossword.overlaps.get((x, y))
+
         if overlap is None:
-            return False  # No overlap, no revision needed
+            return False  # Nenhuma sobreposição, nenhuma revisão necessária
 
         xi, yi = overlap
         words_to_remove = set()
 
         for word_x in self.domains[x]:
-            # Check if there exists at least one word in y's domain that matches at the overlap
+            # Verifica se existe pelo menos uma palavra em y que seja compatível
             match_found = False
             for word_y in self.domains[y]:
                 if word_x[xi] == word_y[yi]:
@@ -71,12 +144,13 @@ class CrosswordCreator():
 
     def ac3(self, arcs=None):
         """
-        Enforce arc consistency using the AC3 algorithm.
-        Returns True if arc consistency is enforced without empty domains; False otherwise.
+        Aplica o algoritmo AC3 para impor consistência de arco.
+        Retorna True se a consistência for alcançada sem domínios vazios; False caso contrário.
         """
         queue = deque()
+
         if arcs is None:
-            # Initialize queue with all arcs
+            # Inicializa a fila com todos os arcos
             for var in self.crossword.variables:
                 for neighbor in self.crossword.neighbors(var):
                     queue.append((var, neighbor))
@@ -88,7 +162,7 @@ class CrosswordCreator():
             (x, y) = queue.popleft()
             if self.revise(x, y):
                 if not self.domains[x]:
-                    return False  # Domain wiped out
+                    return False  # Domínio eliminado
                 for neighbor in self.crossword.neighbors(x):
                     if neighbor != y:
                         queue.append((neighbor, x))
@@ -96,24 +170,24 @@ class CrosswordCreator():
 
     def assignment_complete(self, assignment):
         """
-        Check if the assignment is complete.
+        Verifica se a atribuição está completa.
         """
         return len(assignment) == len(self.crossword.variables)
 
     def consistent(self, assignment):
         """
-        Check if the assignment is consistent.
+        Verifica se a atribuição é consistente.
         """
         assigned_words = set()
         for var, word in assignment.items():
-            # Check word uniqueness
+            # Verifica unicidade das palavras
             if word in assigned_words:
                 return False
             assigned_words.add(word)
-            # Check length consistency
+            # Verifica consistência do comprimento
             if len(word) != var.length:
                 return False
-            # Check overlaps
+            # Verifica sobreposições com vizinhos
             for neighbor in self.crossword.neighbors(var):
                 if neighbor in assignment:
                     overlap = self.crossword.overlaps.get((var, neighbor))
@@ -125,7 +199,7 @@ class CrosswordCreator():
 
     def order_domain_values(self, var, assignment):
         """
-        Return a list of values in the domain of var, ordered by the least-constraining value heuristic.
+        Retorna uma lista de valores no domínio de var, ordenados pela heurística do menor conflito.
         """
         def count_conflicts(value):
             count = 0
@@ -140,20 +214,20 @@ class CrosswordCreator():
                             count += 1
             return count
 
-        # Sort the domain values by the number of conflicts they impose on neighbors (ascending)
+        # Ordena os valores pelo número de conflitos (ascendente)
         return sorted(self.domains[var], key=count_conflicts)
 
     def select_unassigned_variable(self, assignment):
         """
-        Select an unassigned variable using the Minimum Remaining Values (MRV) and Degree heuristics.
+        Seleciona uma variável não atribuída usando as heurísticas MRV e de Grau.
         """
         unassigned_vars = [v for v in self.crossword.variables if v not in assignment]
-        # MRV: minimum remaining values
+        # Heurística MRV: menor número de valores no domínio
         min_domain_size = min(len(self.domains[var]) for var in unassigned_vars)
         mrv_vars = [var for var in unassigned_vars if len(self.domains[var]) == min_domain_size]
         if len(mrv_vars) == 1:
             return mrv_vars[0]
-        # Degree heuristic: variable with the most neighbors
+        # Heurística de Grau: maior número de vizinhos
         max_degree = -1
         selected_var = None
         for var in mrv_vars:
@@ -165,98 +239,33 @@ class CrosswordCreator():
 
     def backtrack(self, assignment):
         """
-        Perform backtracking search to find a complete and consistent assignment.
+        Realiza uma busca de backtracking para encontrar uma atribuição completa e consistente.
         """
         if self.assignment_complete(assignment):
             return assignment
 
         var = self.select_unassigned_variable(assignment)
         for value in self.order_domain_values(var, assignment):
-            # Create a new assignment including var=value
+            # Cria uma nova atribuição incluindo var=value
             local_assignment = assignment.copy()
             local_assignment[var] = value
             if self.consistent(local_assignment):
-                # Inference: make a copy of domains
+                # Inference: faz uma cópia dos domínios
                 saved_domains = copy.deepcopy(self.domains)
                 self.domains[var] = {value}
-                # Enforce arc consistency after assignment
+                # Impõe consistência de arco após a atribuição
                 if self.ac3([(neighbor, var) for neighbor in self.crossword.neighbors(var)]):
                     result = self.backtrack(local_assignment)
                     if result:
                         return result
-                # Restore domains
+                # Restaura os domínios
                 self.domains = saved_domains
         return None
 
-    def print(self, assignment):
-        """
-        Print the crossword assignment to the terminal.
-        """
-        crossword = self.crossword
-        letters = [
-            [None for _ in range(crossword.width)]
-            for _ in range(crossword.height)
-        ]
-        for variable, word in assignment.items():
-            direction = variable.direction
-            for k in range(len(word)):
-                i = variable.i + (k if direction == Variable.DOWN else 0)
-                j = variable.j + (k if direction == Variable.ACROSS else 0)
-                letters[i][j] = word[k]
-
-        for i in range(crossword.height):
-            for j in range(crossword.width):
-                if letters[i][j]:
-                    print(letters[i][j], end=' ')
-                else:
-                    print('█', end=' ')  # Representa células vazias
-            print()
-
-    def save(self, assignment, filename):
-        """
-        Save the crossword assignment as an image file.
-        """
-        cell_size = 60  # Tamanho de cada célula
-        margin = 50  # Margem ao redor da cruzadinha
-        crossword = self.crossword
-        img_width = crossword.width * cell_size + 2 * margin
-        img_height = crossword.height * cell_size + 2 * margin
-        img = Image.new('RGB', (img_width, img_height), 'white')
-        draw = ImageDraw.Draw(img)
-        try:
-            font = ImageFont.truetype("arial.ttf", 24)
-        except:
-            font = ImageFont.load_default()
-
-        # Desenha as células
-        for i in range(crossword.height):
-            for j in range(crossword.width):
-                x = margin + j * cell_size
-                y = margin + i * cell_size
-                if crossword.structure[i][j]:
-                    draw.rectangle([x, y, x + cell_size, y + cell_size], outline='black', fill='white')
-                else:
-                    draw.rectangle([x, y, x + cell_size, y + cell_size], outline='black', fill='black')
-
-        # Preenche as letras
-        for variable, word in assignment.items():
-            direction = variable.direction
-            for k in range(len(word)):
-                i = variable.i + (k if direction == Variable.DOWN else 0)
-                j = variable.j + (k if direction == Variable.ACROSS else 0)
-                if crossword.structure[i][j]:
-                    x = margin + j * cell_size + cell_size / 2
-                    y = margin + i * cell_size + cell_size / 2
-                    draw.text((x - 10, y - 10), word[k], fill='black', font=font)
-
-        img.save(filename)
-
 
 def main():
-    import sys
-
     if len(sys.argv) not in [3, 4]:
-        sys.exit("Usage: python generate.py structure.txt words.txt [output.png]")
+        sys.exit("Uso: python generate.py estrutura.txt palavras.txt [output.png]")
 
     structure = sys.argv[1]
     words = sys.argv[2]
@@ -266,11 +275,12 @@ def main():
     creator = CrosswordCreator(crossword)
     assignment = creator.solve()
     if assignment is None:
-        print("No solution.")
+        print("Nenhuma solução encontrada.")
     else:
         creator.print(assignment)
         if output:
             creator.save(assignment, output)
+
 
 if __name__ == "__main__":
     main()
