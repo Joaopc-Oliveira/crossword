@@ -81,8 +81,9 @@ class CrosswordCreator():
                 if self.crossword.structure[i][j]:
                     draw.rectangle(rect, fill="white")
                     if letters[i][j]:
-                        # Centraliza o texto na célula
-                        w, h = draw.textsize(letters[i][j], font=font)
+                        # Utiliza textbbox para obter a caixa delimitadora do texto
+                        bbox = draw.textbbox((0, 0), letters[i][j], font=font)
+                        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
                         draw.text(
                             (rect[0][0] + ((interior_size - w) / 2),
                              rect[0][1] + ((interior_size - h) / 2) - 10),
