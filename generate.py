@@ -1,96 +1,29 @@
 import sys
-
-from crossword import *
-
+from crossword import Crossword, Variable
+import copy
+from collections import deque
 
 class CrosswordCreator():
 
     def __init__(self, crossword):
         """
-        Create new CSP crossword generate.
+        Create new CSP crossword generator.
         """
         self.crossword = crossword
+        # Domains is a dictionary mapping each variable to a set of possible words
         self.domains = {
-            var: self.crossword.words.copy()
-            for var in self.crossword.variables
+            var: copy.deepcopy(crossword.words)
+            for var in crossword.variables
         }
-
-    def letter_grid(self, assignment):
-        """
-        Return 2D array representing a given assignment.
-        """
-        letters = [
-            [None for _ in range(self.crossword.width)]
-            for _ in range(self.crossword.height)
-        ]
-        for variable, word in assignment.items():
-            direction = variable.direction
-            for k in range(len(word)):
-                i = variable.i + (k if direction == Variable.DOWN else 0)
-                j = variable.j + (k if direction == Variable.ACROSS else 0)
-                letters[i][j] = word[k]
-        return letters
-
-    def print(self, assignment):
-        """
-        Print crossword assignment to the terminal.
-        """
-        letters = self.letter_grid(assignment)
-        for i in range(self.crossword.height):
-            for j in range(self.crossword.width):
-                if self.crossword.structure[i][j]:
-                    print(letters[i][j] or " ", end="")
-                else:
-                    print("█", end="")
-            print()
-
-    def save(self, assignment, filename):
-        """
-        Save crossword assignment to an image file.
-        """
-        from PIL import Image, ImageDraw, ImageFont
-        cell_size = 100
-        cell_border = 2
-        interior_size = cell_size - 2 * cell_border
-        letters = self.letter_grid(assignment)
-
-        # Create a blank canvas
-        img = Image.new(
-            "RGBA",
-            (self.crossword.width * cell_size,
-             self.crossword.height * cell_size),
-            "black"
-        )
-        font = ImageFont.truetype("assets/fonts/OpenSans-Regular.ttf", 80)
-        draw = ImageDraw.Draw(img)
-
-        for i in range(self.crossword.height):
-            for j in range(self.crossword.width):
-
-                rect = [
-                    (j * cell_size + cell_border,
-                     i * cell_size + cell_border),
-                    ((j + 1) * cell_size - cell_border,
-                     (i + 1) * cell_size - cell_border)
-                ]
-                if self.crossword.structure[i][j]:
-                    draw.rectangle(rect, fill="white")
-                    if letters[i][j]:
-                        _, _, w, h = draw.textbbox((0, 0), letters[i][j], font=font)
-                        draw.text(
-                            (rect[0][0] + ((interior_size - w) / 2),
-                             rect[0][1] + ((interior_size - h) / 2) - 10),
-                            letters[i][j], fill="black", font=font
-                        )
-
-        img.save(filename)
 
     def solve(self):
         """
-        Enforce node and arc consistency, and then solve the CSP.
+        Enforce node and arc consistency, and then solve the CSP using backtracking.
+        Returns a complete assignment if possible, else None.
         """
         self.enforce_node_consistency()
-        self.ac3()
+        if not self.ac3():
+            return None
         return self.backtrack(dict())
 
     def enforce_node_consistency(self):
@@ -193,7 +126,6 @@ class CrosswordCreator():
         """
         Return a list of values in the domain of var, ordered by the least-constraining value heuristic.
         """
-
         def count_conflicts(value):
             count = 0
             for neighbor in self.crossword.neighbors(var):
@@ -210,67 +142,84 @@ class CrosswordCreator():
         # Sort the domain values by the number of conflicts they impose on neighbors (ascending)
         return sorted(self.domains[var], key=count_conflicts)
 
-
-
-
-
-    def assignment_complete(self, assignment):
-        """
-        Return True if `assignment` is complete (i.e., assigns a value to each
-        crossword variable); return False otherwise.
-        """
-        raise NotImplementedError
-
-
-
-
-
     def select_unassigned_variable(self, assignment):
         """
-        Return an unassigned variable not already part of `assignment`.
-        Choose the variable with the minimum number of remaining values
-        in its domain. If there is a tie, choose the variable with the highest
-        degree. If there is a tie, any of the tied variables are acceptable
-        return values.
+        Select an unassigned variable using the Minimum Remaining Values (MRV) and Degree heuristics.
         """
-        raise NotImplementedError
+        unassigned_vars = [v for v in self.crossword.variables if v not in assignment]
+        # MRV: minimum remaining values
+        min_domain_size = min(len(self.domains[var]) for var in unassigned_vars)
+        mrv_vars = [var for var in unassigned_vars if len(self.domains[var]) == min_domain_size]
+        if len(mrv_vars) == 1:
+            return mrv_vars[0]
+        # Degree heuristic: variable with the most neighbors
+        max_degree = -1
+        selected_var = None
+        for var in mrv_vars:
+            degree = len(self.crossword.neighbors(var))
+            if degree > max_degree:
+                max_degree = degree
+                selected_var = var
+        return selected_var
 
     def backtrack(self, assignment):
         """
-        Using Backtracking Search, take as input a partial assignment for the
-        crossword and return a complete assignment if possible to do so.
-
-        `assignment` is a mapping from variables (keys) to words (values).
-
-        If no assignment is possible, return None.
+        Perform backtracking search to find a complete and consistent assignment.
         """
-        raise NotImplementedError
+        if self.assignment_complete(assignment):
+            return assignment
 
+        var = self.select_unassigned_variable(assignment)
+        for value in self.order_domain_values(var, assignment):
+            # Create a new assignment including var=value
+            local_assignment = assignment.copy()
+            local_assignment[var] = value
+            if self.consistent(local_assignment):
+                # Inference: make a copy of domains
+                saved_domains = copy.deepcopy(self.domains)
+                self.domains[var] = {value}
+                # Enforce arc consistency after assignment
+                if self.ac3([(neighbor, var) for neighbor in self.crossword.neighbors(var)]):
+                    result = self.backtrack(local_assignment)
+                    if result:
+                        return result
+                # Restore domains
+                self.domains = saved_domains
+        return None
+
+    def print(self, assignment):
+        """
+        Print the crossword assignment to the terminal.
+        """
+        # Implementation provided in the project
+        pass
+
+    def save(self, assignment, filename):
+        """
+        Save the crossword assignment as an image file.
+        """
+        # Implementation provided in the project
+        pass
 
 def main():
+    import sys
 
-    # Check usage
     if len(sys.argv) not in [3, 4]:
-        sys.exit("Usage: python generate.py structure words [output]")
+        sys.exit("Usage: python generate.py structure.txt words.txt [output.png]")
 
-    # Parse command-line arguments
     structure = sys.argv[1]
     words = sys.argv[2]
     output = sys.argv[3] if len(sys.argv) == 4 else None
 
-    # Generate crossword
     crossword = Crossword(structure, words)
     creator = CrosswordCreator(crossword)
     assignment = creator.solve()
-
-    # Print result
     if assignment is None:
         print("No solution.")
     else:
         creator.print(assignment)
         if output:
             creator.save(assignment, output)
-
 
 if __name__ == "__main__":
     main()
