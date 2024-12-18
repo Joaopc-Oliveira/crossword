@@ -2,6 +2,7 @@ import sys
 from crossword import Crossword, Variable
 import copy
 from collections import deque
+from PIL import Image, ImageDraw, ImageFont
 
 class CrosswordCreator():
 
@@ -191,15 +192,65 @@ class CrosswordCreator():
         """
         Print the crossword assignment to the terminal.
         """
-        # Implementation provided in the project
-        pass
+        crossword = self.crossword
+        letters = [
+            [None for _ in range(crossword.width)]
+            for _ in range(crossword.height)
+        ]
+        for variable, word in assignment.items():
+            direction = variable.direction
+            for k in range(len(word)):
+                i = variable.i + (k if direction == Variable.DOWN else 0)
+                j = variable.j + (k if direction == Variable.ACROSS else 0)
+                letters[i][j] = word[k]
+
+        for i in range(crossword.height):
+            for j in range(crossword.width):
+                if letters[i][j]:
+                    print(letters[i][j], end=' ')
+                else:
+                    print('█', end=' ')  # Representa células vazias
+            print()
 
     def save(self, assignment, filename):
         """
         Save the crossword assignment as an image file.
         """
-        # Implementation provided in the project
-        pass
+        cell_size = 60  # Tamanho de cada célula
+        margin = 50  # Margem ao redor da cruzadinha
+        crossword = self.crossword
+        img_width = crossword.width * cell_size + 2 * margin
+        img_height = crossword.height * cell_size + 2 * margin
+        img = Image.new('RGB', (img_width, img_height), 'white')
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("arial.ttf", 24)
+        except:
+            font = ImageFont.load_default()
+
+        # Desenha as células
+        for i in range(crossword.height):
+            for j in range(crossword.width):
+                x = margin + j * cell_size
+                y = margin + i * cell_size
+                if crossword.structure[i][j]:
+                    draw.rectangle([x, y, x + cell_size, y + cell_size], outline='black', fill='white')
+                else:
+                    draw.rectangle([x, y, x + cell_size, y + cell_size], outline='black', fill='black')
+
+        # Preenche as letras
+        for variable, word in assignment.items():
+            direction = variable.direction
+            for k in range(len(word)):
+                i = variable.i + (k if direction == Variable.DOWN else 0)
+                j = variable.j + (k if direction == Variable.ACROSS else 0)
+                if crossword.structure[i][j]:
+                    x = margin + j * cell_size + cell_size / 2
+                    y = margin + i * cell_size + cell_size / 2
+                    draw.text((x - 10, y - 10), word[k], fill='black', font=font)
+
+        img.save(filename)
+
 
 def main():
     import sys
